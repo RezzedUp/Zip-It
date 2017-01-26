@@ -50,7 +50,7 @@ public class Main
                     : OPTIONS.specificSource;
         
         Print.option("Source (-s)", source);
-        Print.option("File Exclusion Filters:\n  ", String.join("\n  ", OPTIONS.filter.patterns));
+        Print.option("File Exclusion Filters", "\n  " + String.join("\n  ", OPTIONS.filter.rawInput));
         
         String consent = Print.prompt("Is this acceptable? (Y/n)");
         
@@ -177,7 +177,7 @@ public class Main
         }
         catch (ParseException e)
         {
-            System.out.println(e.getMessage());
+            Print.line(e.getMessage());
             return false;
         }
         

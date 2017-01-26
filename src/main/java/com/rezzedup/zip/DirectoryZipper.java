@@ -91,9 +91,9 @@ public class DirectoryZipper
             {
                 Print.line("  Adding: " + entry);
     
-                if (this.counter.totalFiles % 10 == 0)
+                if (this.counter.completedFiles % 10 == 0)
                 {
-                    System.out.println(Ansi.White.format("  --> %d% Complete", getPercentComplete()));
+                    Print.clarify("  --> " + getPercentComplete() + "% Complete");
                 }
     
                 this.counter.completedFiles += 1;
@@ -114,7 +114,9 @@ public class DirectoryZipper
     
     public long getPercentComplete()
     {
-        return (this.counter.completedFiles + this.counter.skippedFiles) / this.counter.totalFiles;
+        double visited = this.counter.completedFiles + this.counter.skippedFiles;
+        double percent = visited / (double) this.counter.totalFiles;
+        return (long) (percent * 100);
     }
     
     public String getWorkingName()

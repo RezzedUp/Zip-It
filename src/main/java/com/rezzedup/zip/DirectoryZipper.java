@@ -79,37 +79,64 @@ public class DirectoryZipper
             return;
         }
         
-        Print.status("Calculating total files...");
+        Print.status("  Calculating total files...");
         this.counter.totalFiles = getPaths().count();
-        Print.clarify("Found " + this.counter.totalFiles + " files.");
+        Print.option("  Found", this.counter.totalFiles + " files");
     
-        ZipUtil.pack(source, tempOutput, name ->
+        if (isRecursive)
         {
-            String entry = source.getPath() + "/" + name;
+            ZipUtil.pack(this.source, this.tempOutput, this::accept);
+        }
+        else
+        {
+            try
+            {
+                this.tempOutput.createNewFile();
+            }
+            catch (IOException io)
+            {
+                io.printStackTrace();
+                return;
+            }
             
-            if (this.filter.accepts(entry))
+            getPaths().forEach(path -> 
             {
-                Print.line("  Adding: " + entry);
-    
-                if (this.counter.completedFiles % 10 == 0)
-                {
-                    Print.clarify("  --> " + getPercentComplete() + "% Complete");
-                }
-    
-                this.counter.completedFiles += 1;
-                return entry;
-            }
-            else
-            {
-                Print.notice("  Skipping", entry);
-                this.counter.skippedFiles += 1;
-                return null;
-            }
-        });
+                 File file = path.toFile();
+                 String name = file.getName();
+                 
+                 if (accept(name) == null) { return; }
+                 
+                 ZipUtil.addEntry(this.tempOutput, name, file);
+            });
+        }
         
         tempOutput.renameTo(completeOutput);
         
         Print.status("Done.");
+    }
+    
+    private String accept(String name)
+    {
+        String entry = source.getPath() + "/" + name;
+        
+        if (this.filter.accepts(entry))
+        {
+            Print.line("  Adding: " + entry);
+            
+            if (this.counter.completedFiles % 10 == 0)
+            {
+                Print.clarify("  --> " + getPercentComplete() + "% Complete");
+            }
+            
+            this.counter.completedFiles += 1;
+            return entry;
+        }
+        else
+        {
+            Print.notice("  Skipping", entry);
+            this.counter.skippedFiles += 1;
+            return null;
+        }
     }
     
     public long getPercentComplete()

@@ -7,63 +7,56 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Deque;
-import java.util.LinkedList;
-import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.stream.Stream;
 
-public class DirectoryZipper extends Thread
+public class DirectoryZipper
 {
-    private final ConcurrentLinkedDeque<String> workLog = new ConcurrentLinkedDeque<>();
     private final FileCounter counter = new FileCounter();
     
     private boolean skip = true;
     private boolean isRecursive = true;
     
     private final File source;
-    private final File output;
+    private final File tempOutput;
+    private final File completeOutput;
     private final Filter<String> filter;
     
-    public static Builder into(File outputDirectory)
+    public static Builder of(File sourceDirectory)
     {
-        return new Builder(outputDirectory);
+        return new Builder(sourceDirectory);
     }
     
-    private DirectoryZipper(File sourceDirectory, File outputFile, Filter<String> filter)
+    private DirectoryZipper(File sourceDirectory, File outputDirectory, String outputName, Filter<String> filter)
     {
         this.source = sourceDirectory;
-        this.output = outputFile;
+        this.tempOutput = new File(outputDirectory, outputName + ".temp");
+        this.completeOutput = new File(outputDirectory, outputName + ".zip");
         this.filter = filter;
         
         if (!sourceDirectory.isDirectory())
         {
-            // TODO: clarify to user
+            skip("No such directory '" + sourceDirectory + "'");
+            return;
+        }
+    
+        if (completeOutput.isFile())
+        {
+            skip("Output zip file already exists");
             return;
         }
         
-        if (outputFile.isFile())
+        if (tempOutput.isFile())
         {
-            // TODO: clarify to user
-            return;
+            Print.notice("Temp output file exists. Deleting: '" + tempOutput + "'");
+            tempOutput.delete();
         }
         
         this.skip = false;
     }
     
-    @Override
-    public synchronized void start()
+    private void skip(String reason)
     {
-        if (this.skip)
-        {
-            return;
-        }
-        super.start();
-    }
-    
-    private boolean accepts(Path path)
-    {
-        return !Files.isDirectory(path);
-        // TODO: add more filters
+        Print.notice("Skipping " + source.getName(), reason);
     }
     
     private Stream<Path> getPaths()
@@ -79,7 +72,6 @@ public class DirectoryZipper extends Thread
         return new ArrayList<Path>().stream();
     }
     
-    @Override
     public void run()
     {
         if (this.skip)
@@ -87,42 +79,47 @@ public class DirectoryZipper extends Thread
             return;
         }
         
-        this.workLog.push("Calculating total files...");
+        Print.status("Calculating total files...");
         this.counter.totalFiles = getPaths().count();
+        Print.clarify("Found " + this.counter.totalFiles + " files.");
     
-        ZipUtil.pack(source, output, name ->
+        ZipUtil.pack(source, tempOutput, name ->
         {
-            if (this.filter.accepts(name))
+            String entry = source.getPath() + "/" + name;
+            
+            if (this.filter.accepts(entry))
             {
-                String entry = source.getPath() + "/" + name;
-                this.workLog.push("  Added: " + entry);
+                Print.line("  Adding: " + entry);
+    
+                if (this.counter.totalFiles % 10 == 0)
+                {
+                    System.out.println(Ansi.White.format("  --> %d% Complete", getPercentComplete()));
+                }
+    
                 this.counter.completedFiles += 1;
                 return entry;
             }
             else
             {
-                this.workLog.push("  Skipped: " + name);
+                Print.notice("  Skipping", entry);
                 this.counter.skippedFiles += 1;
                 return null;
             }
         });
+        
+        tempOutput.renameTo(completeOutput);
+        
+        Print.status("Done.");
     }
     
-    public synchronized long getPercentComplete()
+    public long getPercentComplete()
     {
         return (this.counter.completedFiles + this.counter.skippedFiles) / this.counter.totalFiles;
     }
     
-    public synchronized String getWorkingName()
+    public String getWorkingName()
     {
-        return this.source + " -> " + this.output;
-    }
-    
-    public synchronized Deque<String> getLatestWork()
-    {
-        Deque<String> work = new LinkedList<>(this.workLog);
-        this.workLog.clear();
-        return work;
+        return this.source + " -> " + this.completeOutput;
     }
     
     // FileCounter
@@ -142,14 +139,14 @@ public class DirectoryZipper extends Thread
         
         private String prefix = null;
         private String date = null;
-        private File sourceDirectory = null;
+        private File outputDirectory = null;
         private Filter<String> filter = null;
         
-        private final File outputDirectory;
+        private final File sourceDirectory;
         
-        public Builder(File into)
+        public Builder(File from)
         {
-            this.outputDirectory = into;
+            this.sourceDirectory = from;
         }
         
         private void validate(String purpose, String value)
@@ -172,25 +169,25 @@ public class DirectoryZipper extends Thread
             }
         }
         
-        public Builder withPrefix(String prefix)
+        public Builder prefix(String prefix)
         {
             this.prefix = prefix;
             return this;
         }
         
-        public Builder withDate(String date)
+        public Builder date(String date)
         {
             this.date = date;
             return this;
         }
         
-        public Builder withSourceDirectory(File source)
+        public Builder output(File output)
         {
-            this.sourceDirectory = source;
+            this.outputDirectory = output;
             return this;
         }
         
-        public Builder withFilter(Filter<String> filter)
+        public Builder filter(Filter<String> filter)
         {
             this.filter = filter;
             return this;
@@ -198,20 +195,16 @@ public class DirectoryZipper extends Thread
         
         public DirectoryZipper build()
         {
-            validate("withPrefix", this.prefix);
-            validate("withDate", this.date);
-            validate("withSourceDirectory", this.sourceDirectory);
+            validate("prefix", this.prefix);
+            validate("date", this.date);
+            validate("source", this.sourceDirectory);
             validate("output", this.outputDirectory);
             validate("filter", this.filter);
             
-            String sourceName = sourceDirectory.getName().replaceAll("\\.|\\" + File.separator, "").replaceAll(" ", "_");
+            String source = sourceDirectory.getName().replaceAll("\\.|\\" + File.separator, "").replaceAll(" ", "_");
+            String name = prefix + "." + date + ((source.isEmpty()) ? "" : "." + source);
             
-            String source = (sourceName.isEmpty()) ? "" : "." + sourceName;
-            
-            String name = prefix + "." + date + source + ".zip";
-            File output = new File(outputDirectory, name);
-            
-            DirectoryZipper zip = new DirectoryZipper(sourceDirectory, output, filter);
+            DirectoryZipper zip = new DirectoryZipper(sourceDirectory, outputDirectory, name, filter);
             
             zip.isRecursive = this.isRecursive;
             

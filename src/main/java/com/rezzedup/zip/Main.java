@@ -9,21 +9,16 @@ import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
 
 import java.io.File;
-import java.io.PrintStream;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
-import java.util.Deque;
 import java.util.List;
-import java.util.NoSuchElementException;
-import java.util.Scanner;
 import java.util.regex.PatternSyntaxException;
 
 public class Main
 {
     public static final String VERSION = "1.0.0";
     public static final ProgramOptions OPTIONS = new ProgramOptions();
-    public static final PrintStream OUT = System.out;
     
     public static class ProgramOptions
     {
@@ -31,100 +26,59 @@ public class Main
         String prefix = "backup";
         File output = new File("zip");
         String specificSource = null;
-        RegexPathFilter filter = new RegexPathFilter().addWildcardFilter("*.zip").addWildcardFilter("*.db");
+        RegexPathFilter filter = new RegexPathFilter();
         File workingDirectory = new File(".");
         String jar = new File(Main.class.getProtectionDomain().getCodeSource().getLocation().getPath()).getName();
     }
     
     public static void main(String[] args)
     {
-        adjustProgramOptions(args);
+        if (!adjustProgramOptions(args))
+        {
+            return;
+        }
     
-        OUT.format("Date (-d): %s%n", OPTIONS.date);
-        OUT.format("Prefix (-p): %s%n", OPTIONS.prefix);
-        OUT.format("Output Directory (-o): %s%n", OPTIONS.output);
+        Print.option("Date (-d)", OPTIONS.date);
+        Print.option("Prefix (-p)", OPTIONS.prefix);
+        Print.option("Output Directory (-o)", OPTIONS.output.toString());
         
-        if (OPTIONS.specificSource == null)
-        {
-            OUT.println("Source (-s): All Directories");
-        }
-        else 
-        {
-            if (OPTIONS.specificSource.isEmpty())
-            {
-                OUT.println("Source (-s): Local Root Directory");
-            }
-            else 
-            {
-                OUT.format("Source (-s): %s%n", OPTIONS.specificSource);
-            }
-        }
+        String source = 
+            (OPTIONS.specificSource == null) 
+                ? "All Directories" 
+                : (OPTIONS.specificSource.isEmpty()) 
+                    ? "Local Root Directory" 
+                    : OPTIONS.specificSource;
         
-        OUT.format("File Exclusion Filters: %s%n", String.join(", ", OPTIONS.filter.patterns));
-        OUT.format("Threads: 5%n");
+        Print.option("Source (-s)", source);
+        Print.option("File Exclusion Filters:\n  ", String.join("\n  ", OPTIONS.filter.patterns));
         
-        OUT.format("Is this acceptable? (Y/n) ");
-        
-        String consent = new Scanner(System.in).nextLine().trim();
+        String consent = Print.prompt("Is this acceptable? (Y/n)");
         
         if (!consent.isEmpty() && !consent.matches("(?i)^y.*"))
         {
-            OUT.println("Cancelled.");
+            System.out.println("Cancelled.");
             return;
         }
         
         if (OPTIONS.output.mkdirs())
         {
-            OUT.println("Created: " + OPTIONS.output);
-
+            Print.notice("Created: " + OPTIONS.output);
         }
         
         DirectoryZipper zip = 
-            DirectoryZipper.into(OPTIONS.output)
-                .withPrefix(OPTIONS.prefix)
-                .withDate(OPTIONS.date)
-                .withSourceDirectory(new File("plugins"))
-                .withFilter(OPTIONS.filter.copy())
+            DirectoryZipper.of(new File("plugins"))
+                .output(OPTIONS.output)
+                .prefix(OPTIONS.prefix)
+                .date(OPTIONS.date)
+                .filter(OPTIONS.filter)
             .build();
         
-        zip.start();
+        zip.run();
         
-        while (zip.isAlive())
-        {
-            String name = zip.getWorkingName();
-            Deque<String> work = zip.getLatestWork();
-            
-            System.out.println("Latest work from: " + name);
-            
-            for (int i = 0; i < 3; i++)
-            {
-                try
-                {
-                    System.out.println(work.pop());
-                }
-                catch (NoSuchElementException e)
-                {
-                    System.out.println("--- That's it so far ---");
-                    break;
-                }
-            }
-            
-            try
-            {
-                Thread.sleep(500);
-            }
-            catch (InterruptedException e)
-            {
-                e.printStackTrace();
-                System.out.println("Failure.");
-                return;
-            }
-        }
-        
-        OUT.println("Done.");
+        System.out.println("Done.");
     }
     
-    private static void adjustProgramOptions(String[] args)
+    private static boolean adjustProgramOptions(String[] args)
     {
         Options options = new Options();
     
@@ -224,7 +178,7 @@ public class Main
         catch (ParseException e)
         {
             System.out.println(e.getMessage());
-            return;
+            return false;
         }
         
         for (Option option : line.getOptions())
@@ -233,13 +187,13 @@ public class Main
             {
                 case "v":
                     System.out.println("ZipIt v" + VERSION + " by RezzedUp");
-                    return;
+                    return false;
                     
                 case "h":
                     HelpFormatter help = new HelpFormatter();
                     help.setWidth(120);
                     help.printHelp("java -jar " + OPTIONS.jar + " [options]\noptions:", options);
-                    return;
+                    return false;
                     
                 case "xx":
                     OPTIONS.filter.clearFilters();
@@ -271,7 +225,7 @@ public class Main
                     else 
                     {
                         System.out.println("'" + date + "' is not a valid date.");
-                        return;
+                        return false;
                     }
                     break;
                     
@@ -288,22 +242,18 @@ public class Main
                     System.out.println("Found: " + option.getOpt() + " with: " + option.getValue());
             }
         }
+        return true;
     }
     
     public static class RegexPathFilter implements Filter<String>
     {
+        private final List<String> rawInput = new ArrayList<>();
         private final List<String> patterns = new ArrayList<>();
         
-        public RegexPathFilter() {}
-        
-        public RegexPathFilter(RegexPathFilter filter)
+        public RegexPathFilter()
         {
-            this.patterns.addAll(filter.patterns);
-        }
-        
-        public RegexPathFilter copy()
-        {
-            return new RegexPathFilter(this);
+            // Default filters
+            addWildcardFilter("*.zip").addWildcardFilter("*.db");
         }
         
         public void clearFilters()
@@ -315,23 +265,24 @@ public class Main
         {
             // explanation - http://stackoverflow.com/a/24337692
             String regex = ("(?i)\\Q" + filter + "\\E").replace("*", "\\E.*\\Q");
-            add(regex);
+            add(filter, regex);
             return this;
         }
         
         public RegexPathFilter addRegexFilter(String filter)
         {
-            add("(?i)" + filter);
+            add(filter, "(?i)" + filter);
             return this;
         }
     
         @SuppressWarnings("ResultOfMethodCallIgnored")
-        private void add(String pattern)
+        private void add(String raw, String pattern)
         {
             try
             {
                 "test.demo".matches(pattern);
                 this.patterns.add(pattern);
+                this.rawInput.add(raw);
             }
             catch (PatternSyntaxException e)
             {

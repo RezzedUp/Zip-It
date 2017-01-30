@@ -13,7 +13,7 @@ public class DirectoryZipper
 {
     private final FileCounter counter = new FileCounter();
     
-    private boolean skip = true;
+    private boolean skip = false;
     private boolean isRecursive = true;
     
     private final File source;
@@ -49,13 +49,17 @@ public class DirectoryZipper
         {
             Print.notice("Temp output file exists. Deleting: '" + tempOutput + "'");
             tempOutput.delete();
+            
+            if (tempOutput.isFile())
+            {
+                skip("Unable to delete temporary output file.");
+            }
         }
-        
-        this.skip = false;
     }
     
     private void skip(String reason)
     {
+        this.skip = true;
         Print.notice("Skipping " + source.getName(), reason);
     }
     
@@ -83,7 +87,7 @@ public class DirectoryZipper
         this.counter.totalFiles = getPaths().count();
         Print.option("  Found", this.counter.totalFiles + " files");
     
-        if (isRecursive)
+        if (this.isRecursive)
         {
             ZipUtil.pack(this.source, this.tempOutput, this::accept);
         }
@@ -110,9 +114,11 @@ public class DirectoryZipper
             });
         }
         
+        Print.clarify("  Renamed " + tempOutput.getName() + " to " + completeOutput.getName());
+        
         tempOutput.renameTo(completeOutput);
         
-        Print.status("Done.");
+        Print.status("  Done.");
     }
     
     private String accept(String name)
@@ -219,6 +225,12 @@ public class DirectoryZipper
         public Builder filter(Filter<String> filter)
         {
             this.filter = filter;
+            return this;
+        }
+        
+        public Builder recursive(boolean toggle)
+        {
+            this.isRecursive = toggle;
             return this;
         }
         

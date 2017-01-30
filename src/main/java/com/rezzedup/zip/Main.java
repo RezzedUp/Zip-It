@@ -25,8 +25,8 @@ public class Main
         String date = new SimpleDateFormat("yyyy-MM-dd").format(new Date());
         String prefix = "backup";
         File output = new File("zip");
-        String specificSource = null;
         RegexPathFilter filter = new RegexPathFilter();
+        File specificSource = null;
         File workingDirectory = new File(".");
         String jar = new File(Main.class.getProtectionDomain().getCodeSource().getLocation().getPath()).getName();
     }
@@ -45,9 +45,9 @@ public class Main
         String source = 
             (OPTIONS.specificSource == null) 
                 ? "All Directories" 
-                : (OPTIONS.specificSource.isEmpty()) 
+                : (OPTIONS.specificSource == OPTIONS.workingDirectory) 
                     ? "Local Root Directory" 
-                    : OPTIONS.specificSource;
+                    : OPTIONS.specificSource.toString();
         
         Print.option("Source (-s)", source);
         Print.option("File Exclusion Filters", "\n  " + String.join("\n  ", OPTIONS.filter.rawInput));
@@ -56,7 +56,7 @@ public class Main
         
         if (!consent.isEmpty() && !consent.matches("(?i)^y.*"))
         {
-            System.out.println("Cancelled.");
+            Print.line("Cancelled.");
             return;
         }
         
@@ -65,17 +65,61 @@ public class Main
             Print.notice("Created: " + OPTIONS.output);
         }
         
-        DirectoryZipper zip = 
-            DirectoryZipper.of(new File("plugins"))
-                .output(OPTIONS.output)
-                .prefix(OPTIONS.prefix)
-                .date(OPTIONS.date)
-                .filter(OPTIONS.filter)
-            .build();
+        if (OPTIONS.specificSource == null)
+        {
+            File[] directories = OPTIONS.workingDirectory.listFiles(File::isDirectory);
+            
+            if (directories == null)
+            {
+                Print.line("FATAL ERROR: Working directory is not a directory?");
+                return;
+            }
+            
+            for (File dir : directories)
+            {
+                zip(dir);
+            }
+            zipWorkingDirectory();
+        }
+        else 
+        {
+            if (OPTIONS.specificSource == OPTIONS.workingDirectory)
+            {
+                zipWorkingDirectory();
+            }
+            else
+            {
+                zip(OPTIONS.specificSource);
+            }
+        }
         
-        zip.run();
+        Print.line("Complete.");
+    }
+    
+    private static void zip(File directory)
+    {
+        prepare(directory).build().run();
+    }
+    
+    private static void zipWorkingDirectory()
+    {
+        prepare(OPTIONS.workingDirectory).recursive(false).build().run();
+    }
+    
+    private static DirectoryZipper.Builder prepare(File directory)
+    {
+        return DirectoryZipper.of(directory).output(OPTIONS.output).prefix(OPTIONS.prefix).date(OPTIONS.date).filter(OPTIONS.filter);
+    }
+    
+    private static boolean pathIsValid(String path)
+    {
+        boolean invalid = path.matches("^(\\.|\\/|\\\\).*");
         
-        System.out.println("Done.");
+        if (invalid)
+        {
+            Print.notice("Invalid path", path);
+        }
+        return invalid;
     }
     
     private static boolean adjustProgramOptions(String[] args)
@@ -140,6 +184,15 @@ public class Main
             .build();
         options.addOption(regexExclusionList);
         
+        Option overridePrefix = 
+            Option.builder("p")
+                .longOpt("prefix")
+                .desc("Override the output zip's prefix.\n")
+                .hasArg()
+                .argName("prefix")
+            .build();
+        options.addOption(overridePrefix);
+        
         Option overrideDate = 
             Option.builder("d")
                 .longOpt("date")
@@ -186,60 +239,112 @@ public class Main
             switch (option.getOpt())
             {
                 case "v":
-                    System.out.println("ZipIt v" + VERSION + " by RezzedUp");
+                {
+                    Print.line("ZipIt v" + VERSION + " by RezzedUp");
                     return false;
-                    
+                }
                 case "h":
+                {
                     HelpFormatter help = new HelpFormatter();
                     help.setWidth(120);
                     help.printHelp("java -jar " + OPTIONS.jar + " [options]\noptions:", options);
                     return false;
-                    
+                }
                 case "xx":
+                {
                     OPTIONS.filter.clearFilters();
-                    
+                }
                 case "x":
+                {
                     for (String value : option.getValues())
                     {
                         OPTIONS.filter.addWildcardFilter(value);
                     }
                     break;
-                    
+                }
                 case "xregx":
+                {
                     OPTIONS.filter.clearFilters();
-                    
+                }
                 case "regx":
+                {
                     for (String value : option.getValues())
                     {
                         OPTIONS.filter.addRegexFilter(value);
                     }
                     break;
+                }
+                case "p":
+                {
+                    String prefix = option.getValue();
                     
+                    if (prefix.matches("^\\w[\\w-]*$"))
+                    {
+                        OPTIONS.prefix = prefix;
+                    }
+                    else 
+                    {
+                        Print.notice("Invalid prefix", prefix);
+                        return false;
+                    }
+                    break;
+                }
                 case "d":
+                {
                     String date = option.getValue();
-                    
+    
                     if (date.matches("[0-9]{4}(-|_)?[0-9]{1,2}(-|_)?[0-9]{1,2}"))
                     {
                         OPTIONS.date = date;
                     }
-                    else 
+                    else
                     {
-                        System.out.println("'" + date + "' is not a valid date.");
+                        Print.notice("Invalid date", date);
                         return false;
                     }
                     break;
-                    
+                }
                 case "o":
+                {
+                    String value = option.getValue();
+    
+                    if (!pathIsValid(value)) 
+                    {
+                        return false; 
+                    }
+                    
                     OPTIONS.output = new File(option.getValue());
                     break;
-                    
+                }
                 case "s":
+                {
                     String value = option.getValue();
-                    OPTIONS.specificSource = (value == null) ? "" : value;
+    
+                    if (value == null)
+                    {
+                        OPTIONS.specificSource = OPTIONS.workingDirectory;
+                    }
+                    else
+                    {
+                        if (!pathIsValid(value))
+                        {
+                            return false;
+                        }
+                        File source = new File(value);
+                        
+                        if (!source.isDirectory())
+                        {
+                            Print.notice("Invalid path", value + " is not a directory.");
+                            return false;
+                        }
+                        OPTIONS.specificSource = source;
+                    }
                     break;
-                    
+                }
                 default:
-                    System.out.println("Found: " + option.getOpt() + " with: " + option.getValue());
+                {
+                    Print.line("Found: " + option.getOpt() + " with: " + option.getValue());
+                }
             }
         }
         return true;

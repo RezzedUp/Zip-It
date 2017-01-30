@@ -3,11 +3,13 @@ package com.rezzedup.zip;
 import org.zeroturnaround.zip.ZipUtil;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.stream.Stream;
+import java.util.zip.ZipOutputStream;
 
 public class DirectoryZipper
 {
@@ -20,6 +22,7 @@ public class DirectoryZipper
     private final File tempOutput;
     private final File completeOutput;
     private final Filter<String> filter;
+    private final String entryPath;
     
     public static Builder of(File sourceDirectory)
     {
@@ -32,6 +35,14 @@ public class DirectoryZipper
         this.tempOutput = new File(outputDirectory, outputName + ".temp");
         this.completeOutput = new File(outputDirectory, outputName + ".zip");
         this.filter = filter;
+    
+        String path = this.source.getPath().replaceAll("^(\\.|\\/)*", "");
+    
+        if (!path.isEmpty() && !path.endsWith("/"))
+        {
+            path += "/";
+        }
+        this.entryPath = path;
         
         if (!sourceDirectory.isDirectory())
         {
@@ -53,6 +64,7 @@ public class DirectoryZipper
             if (tempOutput.isFile())
             {
                 skip("Unable to delete temporary output file.");
+                return;
             }
         }
     }
@@ -83,6 +95,8 @@ public class DirectoryZipper
             return;
         }
         
+        Print.line(Ansi.Cyan.and(Ansi.HighIntensity).colorize("Zipping: '" + this.source + "' --> '" + this.completeOutput + "'"));
+        
         Print.status("  Calculating total files...");
         this.counter.totalFiles = getPaths().count();
         Print.option("  Found", this.counter.totalFiles + " files");
@@ -96,6 +110,9 @@ public class DirectoryZipper
             try
             {
                 this.tempOutput.createNewFile();
+                // create an empty zip...
+                ZipOutputStream stream = new ZipOutputStream(new FileOutputStream(this.tempOutput));
+                stream.close();
             }
             catch (IOException io)
             {
@@ -105,12 +122,14 @@ public class DirectoryZipper
             
             getPaths().forEach(path -> 
             {
-                 File file = path.toFile();
-                 String name = file.getName();
-                 
-                 if (accept(name) == null) { return; }
-                 
-                 ZipUtil.addEntry(this.tempOutput, name, file);
+                if (Files.isDirectory(path)) { return; }
+                
+                File file = path.toFile();
+                String name = file.getName();
+                
+                if (accept(name) == null) { return; }
+                
+                ZipUtil.addEntry(this.tempOutput, name, file);
             });
         }
         
@@ -123,7 +142,7 @@ public class DirectoryZipper
     
     private String accept(String name)
     {
-        String entry = source.getPath() + "/" + name;
+        String entry = this.entryPath + name;
         
         if (this.filter.accepts(entry))
         {

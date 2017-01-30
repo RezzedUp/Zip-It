@@ -9,6 +9,7 @@ import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
 
 import java.io.File;
+import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -46,7 +47,7 @@ public class Main
             (OPTIONS.specificSource == null) 
                 ? "All Directories" 
                 : (OPTIONS.specificSource == OPTIONS.workingDirectory) 
-                    ? "Local Root Directory" 
+                    ? "Working Directory" 
                     : OPTIONS.specificSource.toString();
         
         Print.option("Source (-s)", source);
@@ -77,6 +78,28 @@ public class Main
             
             for (File dir : directories)
             {
+                String path = dir.getPath();
+                
+                try
+                {
+                    if (dir.getCanonicalPath().equals(OPTIONS.output.getCanonicalPath()))
+                    {
+                        Print.notice("Skipping", "Output directory");
+                        continue;
+                    }
+                }
+                catch (IOException e)
+                {
+                    e.printStackTrace();
+                    continue;
+                }
+                
+                if (!OPTIONS.filter.accepts(path))
+                {
+                    Print.notice("Skipping", dir.getName());
+                    continue;
+                }
+                
                 zip(dir);
             }
             zipWorkingDirectory();
@@ -363,6 +386,7 @@ public class Main
         
         public void clearFilters()
         {
+            this.rawInput.clear();
             this.patterns.clear();
         }
         

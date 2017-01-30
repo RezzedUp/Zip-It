@@ -23,13 +23,13 @@ public class Main
     
     public static class ProgramOptions
     {
+        String jar = new File(Main.class.getProtectionDomain().getCodeSource().getLocation().getPath()).getName();
+        File workingDirectory = new File(".");
         String date = new SimpleDateFormat("yyyy-MM-dd").format(new Date());
         String prefix = "backup";
         File output = new File("zip");
         RegexPathFilter filter = new RegexPathFilter();
         File specificSource = null;
-        File workingDirectory = new File(".");
-        String jar = new File(Main.class.getProtectionDomain().getCodeSource().getLocation().getPath()).getName();
     }
     
     public static void main(String[] args)
@@ -65,6 +65,8 @@ public class Main
         {
             Print.notice("Created: " + OPTIONS.output);
         }
+        
+        OPTIONS.filter.addWildcardFilter(OPTIONS.jar);
         
         if (OPTIONS.specificSource == null)
         {

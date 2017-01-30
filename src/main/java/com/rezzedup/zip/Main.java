@@ -7,6 +7,7 @@ import org.apache.commons.cli.HelpFormatter;
 import org.apache.commons.cli.Option;
 import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
+import org.zeroturnaround.zip.ZipException;
 
 import java.io.File;
 import java.io.IOException;
@@ -90,9 +91,9 @@ public class Main
                         continue;
                     }
                 }
-                catch (IOException e)
+                catch (IOException io)
                 {
-                    e.printStackTrace();
+                    io.printStackTrace();
                     continue;
                 }
                 
@@ -102,7 +103,14 @@ public class Main
                     continue;
                 }
                 
-                zip(dir);
+                try
+                {
+                    zip(dir);
+                }
+                catch (ZipException e)
+                {
+                    e.printStackTrace();
+                }
             }
             zipWorkingDirectory();
         }
